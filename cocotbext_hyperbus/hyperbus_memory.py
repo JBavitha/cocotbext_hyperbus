@@ -6,13 +6,16 @@ from cocotb.utils import get_sim_time
 from cocotb.binary import BinaryValue
 
 class HyperBusMemory:
-    def __init__(self, dut, clk, rst, address_width=32, data_width=32):
+    def __init__(self, dut, clk, rst, address_width=32, data_width=32, initial_latency=4, fixed_latency=True, burst_length=32):
         self.dut = dut
         self.clk = clk
         self.rst = rst
         self.address_width = address_width
         self.data_width = data_width
         self.memory = {}
+        self.initial_latency = initial_latency
+        self.fixed_latency = fixed_latency
+        self.burst_length = burst_length
 
         # Initialize signals
         self.dut.CS_.value = 1
@@ -35,14 +38,14 @@ class HyperBusMemory:
         await Timer(100, 'ns')
 
     async def read(self, address):
-        # Simulate a read operation
-        await Timer(10, 'ns')
+        # Simulate a read operation with initial latency
+        await Timer(self.initial_latency * 10, 'ns')  # Initial latency in clock cycles
         data = self.target.read(address, self.data_width // 8)
         return data
 
     async def write(self, address, data):
-        # Simulate a write operation
-        await Timer(10, 'ns')
+        # Simulate a write operation with initial latency
+        await Timer(self.initial_latency * 10, 'ns')  # Initial latency in clock cycles
         self.target.write(address, data, self.data_width // 8)
 
     async def handle_transactions(self):
@@ -67,7 +70,7 @@ async def test_hyperbus_memory(dut):
     # Initialize the HyperBus memory
     clk = dut.clk
     rst = dut.rst
-    hyperbus_memory = HyperBusMemory(dut, clk, rst)
+    hyperbus_memory = HyperBusMemory(dut, clk, rst, initial_latency=4, fixed_latency=True, burst_length=32)
 
     # Start handling transactions
     cocotb.start_soon(hyperbus_memory.handle_transactions())
