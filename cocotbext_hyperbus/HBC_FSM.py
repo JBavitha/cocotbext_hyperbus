@@ -1,6 +1,9 @@
-import cocotb
-from cocotb.triggers import Timer
 from cocotb.binary import BinaryValue
+from cocotb.triggers import Timer
+import cocotb
+import random
+from cocotb.utils import get_sim_time
+
 
 class DQDriver:
     def __init__(self, dut):
