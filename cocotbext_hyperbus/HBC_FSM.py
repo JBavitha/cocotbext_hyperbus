@@ -1,8 +1,39 @@
-from cocotb.binary import BinaryValue
-from cocotb.triggers import Timer
 import cocotb
-import random
-from cocotb.utils import get_sim_time
+from cocotb.triggers import Timer
+from cocotb.binary import BinaryValue
+
+class DQDriver:
+    def __init__(self, dut):
+        self.dut = dut
+
+    async def drive(self, value):
+        self.dut.DQ.value = value
+        await Timer(1, 'ns')  # Small delay to ensure the value is driven
+
+    async def drive_high_impedance(self):
+        self.dut.DQ.value = BinaryValue('Z')
+        await Timer(1, 'ns')  # Small delay to ensure the value is driven
+
+class RWDSDriver:
+    def __init__(self, dut):
+        self.dut = dut
+
+    async def drive(self, value):
+        self.dut.RWDS.value = value
+        await Timer(1, 'ns')  # Small delay to ensure the value is driven
+
+    async def drive_high_impedance(self):
+        self.dut.RWDS.value = BinaryValue('Z')
+        await Timer(1, 'ns')  # Small delay to ensure the value is driven
+
+class CS_Driver:
+    def __init__(self, dut):
+        self.dut = dut
+
+    async def drive(self, value):
+        self.dut.CS_.value = value
+        await Timer(1, 'ns')  # Small delay to ensure the value is driven
+
 class HyperBus_FSM:
     # FSM States
     IDLE = 0
@@ -15,8 +46,12 @@ class HyperBus_FSM:
     # Write Latency
     WRITE_LATENCY = 6 * 2 + 10 - 1
 
-    def __init__(self):
+    def __init__(self, dq_driver, rwds_driver, cs_driver):
+        self.dq_driver = dq_driver
+        self.rwds_driver = rwds_driver
+        self.cs_driver = cs_driver
 
+        # Initialize internal variables
         self.i_clk = 0
         self.i_rstn = 1
         self.i_cfg_access = 0
@@ -37,9 +72,13 @@ class HyperBus_FSM:
         self.i_rwds = 0
         self.o_rwds_de = 0
         self.o_resetn = 1
-        self.io_dq=0
-        self.io_rwds=0
-        self.dq_z_en=0
+        self.io_dq = 0
+        self.io_rwds = 0
+        self.dq_z_en = 0
+
+        # High-z values
+        self.highimp_8 = 'z' * 8
+        self.highimp_1 = 'z'
 
         # Internal Variables
         self.state = self.IDLE
@@ -52,22 +91,8 @@ class HyperBus_FSM:
         self.rwds_d = 0
         self.bus_clk = 0
 
-        #High-z values
-        self.highimp_8='z'
-        for i in range(7):
-            self.highimp_8+='z'
-        self.highimp_1='z'
-
-
-    def fsm_reset(self):
-        self.ca = 0
-        self.state = self.IDLE
-        self.mem_ready = 0
-        self.mem_rdata = 0
-        self.counter = 0
-
-    async def fsm(self,dut):
-        await Timer(5,'ns')
+    async def fsm(self, dut):
+        await Timer(5, 'ns')
         while True:
             if not self.i_rstn:
                 self.fsm_reset()
@@ -75,7 +100,7 @@ class HyperBus_FSM:
                 if self.state == self.IDLE:
                     self.mem_ready = 0
                     if self.i_mem_valid and not self.mem_ready:
-                        self.ca=self.update_ca(self.i_mem_wstrb,self.i_cfg_access,self.i_mem_addr)
+                        self.ca = self.update_ca(self.i_mem_wstrb, self.i_cfg_access, self.i_mem_addr)
                         self.wdata = self.i_mem_wdata
                         self.wstrb = self.i_mem_wstrb
                         self.counter = 5
@@ -103,14 +128,12 @@ class HyperBus_FSM:
                         self.state = self.WRITE
 
                 elif self.state == self.WRITE:
-
                     if self.counter:
                         self.counter -= 1
                     else:
                         self.state = self.DONE
 
                 elif self.state == self.READ:
-                    
                     if self.rwds_valid():
                         if self.counter == 3:
                             self.mem_rdata = (self.i_dq << 8) | (self.mem_rdata & 0xFFFF00FF)
@@ -124,12 +147,12 @@ class HyperBus_FSM:
                             self.counter -= 1
                         else:
                             self.state = self.DONE
-                    
 
                 elif self.state == self.DONE:
                     self.mem_ready = 1
                     self.state = self.IDLE
 
+            # Drive signals using drivers
             self.o_csn0 = self.state in [self.IDLE, self.DONE]
             self.o_resetn = self.i_rstn
             self.o_dq = self.ca_words()[self.counter] if self.state == self.CAs else (self.wdata_words()[self.counter] if self.state == self.WRITE else 0)
@@ -138,13 +161,23 @@ class HyperBus_FSM:
             self.o_rwds_de = self.state == self.WRITE and not (self.ca >> 46 & 1)
             self.o_mem_ready = self.mem_ready
             self.o_mem_rdata = self.mem_rdata
-            self.io_dq= self.o_dq if self.o_dq_de else self.highimp_8
-            self.io_rwds=self.o_rwds if self.o_rwds_de else BinaryValue(self.highimp_1)
-            await Timer(10,'ns')
+            self.io_dq = self.o_dq if self.o_dq_de else self.highimp_8
+            self.io_rwds = self.o_rwds if self.o_rwds_de else BinaryValue(self.highimp_1)
 
+            await self.cs_driver.drive(self.o_csn0)
+            await self.dq_driver.drive(self.io_dq)
+            await self.rwds_driver.drive(self.io_rwds)
+            await Timer(10, 'ns')
+
+    def fsm_reset(self):
+        self.ca = 0
+        self.state = self.IDLE
+        self.mem_ready = 0
+        self.mem_rdata = 0
+        self.counter = 0
 
     def rwds_valid(self):
-        return self.rwds_d or self.i_rwds
+        return self.rwds_d or self.dut.i_rwds.value
 
     def ca_words(self):
         return [(self.ca >> (8 * i)) & 0xFF for i in range(6)]
@@ -157,28 +190,26 @@ class HyperBus_FSM:
 
     def wstrb_words(self):
         return [(self.wstrb >> 1) & 1, self.wstrb & 1, (self.wstrb >> 3) & 1, (self.wstrb >> 2) & 1]
-    
+
     async def is_rwdsvalid(self):
         while True:
-            await Timer(5,'ns')
-            self.rwds_d=self.i_rwds
+            await Timer(5, 'ns')
+            self.rwds_d = self.dut.i_rwds.value
 
     def get_time(self):
-        return get_sim_time("ns")
-    
-    def log(self,msg):
+        return cocotb.utils.get_sim_time("ns")
+
+    def log(self, msg):
         print(f'[{self.get_time()}]  {msg}')
 
-    def rx_data(self,num, size):
+    def rx_data(self, num, size):
         binary_str = format(num, '032b')
         shrinked_binary_str = binary_str[-size:]
         shrinked_num = int(shrinked_binary_str, 2)
         hex_str = hex(shrinked_num)
-        
         return hex_str
-    
-    def update_ca(self,i_mem_wstrb, i_cfg_access, i_mem_addr):
-        
+
+    def update_ca(self, i_mem_wstrb, i_cfg_access, i_mem_addr):
         or_i_mem_wstrb = int(i_mem_wstrb != 0)
         not_or_i_mem_wstrb = int(not or_i_mem_wstrb)
 
@@ -187,14 +218,14 @@ class HyperBus_FSM:
         _CA |= int(i_cfg_access) << 46
         _CA |= (or_i_mem_wstrb & int(i_cfg_access)) << 45
         _CA &= ~((1 << 45) - (1 << 16))
-        _CA |= (i_mem_addr & 0xFFFFFFF8) << 13 
-        _CA &= ~0x7 
-        _CA |= (i_mem_addr & 0x7) 
+        _CA |= (i_mem_addr & 0xFFFFFFF8) << 13
+        _CA &= ~0x7
+        _CA |= (i_mem_addr & 0x7)
         _CA &= (1 << 48) - 1
 
         return _CA
-    
-    def swap_halves(self,hex_num):
+
+    def swap_halves(self, hex_num):
         hex_str = f"{hex_num:08x}"
 
         first_half = hex_str[:4]
@@ -202,16 +233,13 @@ class HyperBus_FSM:
 
         swapped_hex_str = second_half + first_half
         swapped_hex_num = int(swapped_hex_str, 16)
-        
+
         return swapped_hex_num
-    
-    def generate_random_data(self,num):
+
+    def generate_random_data(self, num):
+        import random
         int_list = []
         for _ in range(num):
-            # Generate a random integer within the specified range
             random_int = random.randint(0, 2**32 - 1)
             int_list.append(random_int)
         return int_list
-
-
-
