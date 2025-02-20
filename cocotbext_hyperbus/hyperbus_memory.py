@@ -5,38 +5,6 @@ from cocotb.handle import Release, Freeze, Force
 from cocotb.utils import get_sim_time
 from cocotb.binary import BinaryValue
 
-class DQDriver:
-    def __init__(self, dut):
-        self.dut = dut
-
-    async def drive(self, value):
-        self.dut.DQ.value = value
-        await Timer(1, 'ns')  # Small delay to ensure the value is driven
-
-    async def drive_high_impedance(self):
-        self.dut.DQ.value = BinaryValue('Z')
-        await Timer(1, 'ns')  # Small delay to ensure the value is driven
-
-class RWDSDriver:
-    def __init__(self, dut):
-        self.dut = dut
-
-    async def drive(self, value):
-        self.dut.RWDS.value = value
-        await Timer(1, 'ns')  # Small delay to ensure the value is driven
-
-    async def drive_high_impedance(self):
-        self.dut.RWDS.value = BinaryValue('Z')
-        await Timer(1, 'ns')  # Small delay to ensure the value is driven
-
-class CS_Driver:
-    def __init__(self, dut):
-        self.dut = dut
-
-    async def drive(self, value):
-        self.dut.CS_.value = value
-        await Timer(1, 'ns')  # Small delay to ensure the value is driven
-
 class HyperBusMemory:
     def __init__(self, dut, clk, rst, address_width=32, data_width=32, initial_latency=4, fixed_latency=True, burst_length=32):
         self.dut = dut
@@ -58,6 +26,9 @@ class HyperBusMemory:
         self.dq_driver = DQDriver(dut)
         self.rwds_driver = RWDSDriver(dut)
         self.cs_driver = CS_Driver(dut)
+
+        # Initialize FSM
+        self.hyperbus_fsm = HyperBus_FSM(self.dq_driver, self.rwds_driver, self.cs_driver)
 
         # Start the clock
         cocotb.start_soon(Clock(self.clk, 10, units='ns').start())
