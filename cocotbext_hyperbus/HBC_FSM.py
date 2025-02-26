@@ -22,11 +22,11 @@ class RWDSDriver:
         self.dut = dut
 
     async def drive(self, value):
-        self.dut.RWDS.value = value
+        self.dut.rwds.value = value
         await Timer(1, 'ns')  # Small delay to ensure the value is driven
 
     async def drive_high_impedance(self):
-        self.dut.RWDS.value = BinaryValue('Z')
+        self.dut.rwds.value = BinaryValue('Z')
         await Timer(1, 'ns')  # Small delay to ensure the value is driven
 
 class CS_Driver:
@@ -34,7 +34,7 @@ class CS_Driver:
         self.dut = dut
 
     async def drive(self, value):
-        self.dut.CS_.value = value
+        self.dut.csneg.value = value
         await Timer(1, 'ns')  # Small delay to ensure the value is driven
 
 class HyperBus_FSM:
@@ -180,7 +180,7 @@ class HyperBus_FSM:
         self.counter = 0
 
     def rwds_valid(self):
-        return self.rwds_d or self.dut.i_rwds.value
+        return self.rwds_d or self.dut.rwds.value
 
     def ca_words(self):
         return [(self.ca >> (8 * i)) & 0xFF for i in range(6)]
@@ -197,7 +197,7 @@ class HyperBus_FSM:
     async def is_rwdsvalid(self):
         while True:
             await Timer(5, 'ns')
-            self.rwds_d = self.dut.i_rwds.value
+            self.rwds_d = self.dut.rwds.value
 
     def get_time(self):
         return cocotb.utils.get_sim_time("ns")
