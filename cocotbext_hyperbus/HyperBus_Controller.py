@@ -7,8 +7,9 @@ from cocotb.utils import get_sim_time
 
 
 class HyperBusController(HyperBus_FSM):
-    def __init__(self,dut):
-        super().__init__()
+    def __init__(self, dut, dq_driver, rwds_driver, cs_driver):
+        super().__init__(dq_driver, rwds_driver, cs_driver)
+        self.dut = dut
         self.Init(dut)
 
         
@@ -147,8 +148,8 @@ class HyperBusController(HyperBus_FSM):
                 dut.rwds.value=Release()
 
             dut.csneg.value=(self.o_csn0)
-            dut.ck.value=(self.o_clk)
-            dut.resetneg.value=(self.o_resetn)
+            dut.clk.value=(self.o_clk)
+            dut.rst.value=(self.o_resetn)
             self.monitor_dq(dut)
             self.i_rwds=dut.rwds.value
             

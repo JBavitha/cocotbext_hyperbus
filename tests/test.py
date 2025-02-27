@@ -1,14 +1,18 @@
-# test.py
+
+# tests/test.py
 import cocotb
 from cocotb.triggers import Timer
-from cocotbext_hyperbus import HyperBusController
 from cocotb.clock import Clock
+from cocotbext_hyperbus.HyperBus_Controller import HyperBusController
+
 from cocotbext_hyperbus.hyperbus_memory import DQDriver, RWDSDriver, CS_Driver
 
 @cocotb.test()
 async def test_hyperbus(dut):
-    clk = dut.clk
-    rst = dut.rst
+
+    clk = dut.i_clk  # Use the correct signal name
+    rst = dut.i_rstn  # Use the correct signal name
+
 
     # Initialize the clock and reset
     cocotb.start_soon(Clock(clk, 10, units='ns').start())

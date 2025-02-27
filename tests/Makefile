@@ -1,19 +1,17 @@
-# Makefile
+# tests/Makefile
 
 # defaults
 SIM ?= icarus
 TOPLEVEL_LANG ?= verilog
 
-VERILOG_SOURCES += wrapper_ram.v
-VERILOG_SOURCES += s27kl0641.v
-# use VHDL_SOURCES for VHDL files
+# Verilog sources
+VERILOG_SOURCES += ../cocotbext_hyperbus/hbc.v
 
 # TOPLEVEL is the name of the toplevel module in your Verilog or VHDL file
-TOPLEVEL = HyperRAM_wrapper
+TOPLEVEL = hbc
 
-# MODULE is the filename of the Python test file
+# MODULE is the filename of the Python test file without the .py extension
 MODULE = test
 
-# include cocotb's make rules to take care of the simulator setup
+# Include cocotb's make rules to take care of the simulator setup
 include $(shell cocotb-config --makefiles)/Makefile.sim
-

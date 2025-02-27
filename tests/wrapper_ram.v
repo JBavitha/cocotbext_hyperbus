@@ -10,8 +10,8 @@ module HyperRAM_wrapper(
     dq0      ,
     rwds     ,
     csneg    ,
-    ck       ,
-    resetneg ,
+    clk       ,
+    rst ,
 );
 
 inout  dq7;
@@ -24,8 +24,8 @@ inout  dq1;
 inout  dq0;
 inout  rwds;
 input  csneg;
-input  ck;
-input  resetneg;
+input  clk;
+input  rst;
 
 
 wire [7:0] dq;
@@ -48,8 +48,8 @@ RAM
     rwds     ,
 
     csneg    ,
-    ck       ,
-    resetneg
+    clk       ,
+    rst
     );
 
 
