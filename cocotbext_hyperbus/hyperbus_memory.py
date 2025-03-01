@@ -61,15 +61,15 @@ class HyperBusMemory:
         self.rst = rst
         self.address_width = address_width
         self.data_width = data_width
-        self.memory = {}
+        self.memory = MemoryRegion(2**address_width)  # Initialize memory region
         self.initial_latency = initial_latency
         self.fixed_latency = fixed_latency
         self.burst_length = burst_length
 
         # Initialize signals
         self.dut.csneg.value = 1
-        self.dut.RWDS.value = 1
-        self.dut.DQ.value = 0
+        self.dut.rwds.value = 1
+        self.dut.dq.value = 0
 
         # Initialize drivers
         self.dq_driver = DQDriver(dut)
@@ -82,27 +82,24 @@ class HyperBusMemory:
         # Reset the interface
         cocotb.start_soon(self.reset())
 
-        # Define the target memory region
-        self.target = target
-
     async def reset(self):
-    	self.rst.value = 1  # Initial state of reset signal
-    	await Timer(100, 'ns')
-    	self.rst.value = 0  # Assert reset
-    	await Timer(100, 'ns')
-    	self.rst.value = 1  # Deassert reset
-    	await Timer(100, 'ns')  # Wait for some time after deasserting reset
+        self.rst.value = 1  # Initial state of reset signal
+        await Timer(100, 'ns')
+        self.rst.value = 0  # Assert reset
+        await Timer(100, 'ns')
+        self.rst.value = 1  # Deassert reset
+        await Timer(100, 'ns')  # Wait for some time after deasserting reset
 
     async def read(self, address):
         # Simulate a read operation with initial latency
         await Timer(self.initial_latency * 10, 'ns')  # Initial latency in clock cycles
-        data = self.target.read(address, self.data_width // 8)
+        data = self.memory.read(address, self.data_width // 8)
         return data
 
     async def write(self, address, data):
         # Simulate a write operation with initial latency
         await Timer(self.initial_latency * 10, 'ns')  # Initial latency in clock cycles
-        self.target.write(address, data, self.data_width // 8)
+        self.memory.write(address, data, self.data_width // 8)
 
     def decode_address(self, dq_value):
         """
@@ -122,16 +119,13 @@ class HyperBusMemory:
     async def handle_transactions(self):
         while True:
             await RisingEdge(self.clk)
-            if self.dut.CS_.value == 0:  # Transaction active
-                address, r_w, as_ = await self.decode_address(self.dut.DQ.value)
+            if self.dut.csneg.value == 0:  # Transaction active
+                address, r_w, as_ = self.decode_address(int(self.dut.dq.value))
                 if r_w:  # Read transaction
                     data = await self.read(address)
                     await self.dq_driver.drive(data)  # Drive data back to the bus
                 else:  # Write transaction
-                    await self.write(address, int(self.dut.DQ.value))  # Simplified data extraction
+                    await self.write(address, int(self.dut.dq.value))  # Simplified data extraction
 
     def log(self, msg):
         print(f'[{get_sim_time("ns")}]  {msg}')
-
-
-# This is the complete code for the HyperBusMemory class and supporting classes.
