@@ -3,6 +3,7 @@ from cocotb.triggers import Timer, RisingEdge
 from cocotb.clock import Clock
 from cocotb.utils import get_sim_time
 from cocotb.binary import BinaryValue
+from cocotb_bus.bus import Bus
 
 class MemoryRegion:
     def __init__(self, size):
@@ -54,8 +55,11 @@ class CS_Driver:
         self.dut.csneg.value = value
         await Timer(1, 'ns')  # Small delay to ensure the value is driven
 
-class HyperBusMemory:
+class HyperBusMemory(Bus):
+    _signals = ['ck','cs_n','rwds_in','rwds_out','dq_in','dq_out']
+
     def __init__(self, dut, clk, rst, address_width=32, data_width=32, initial_latency=4, fixed_latency=True, burst_length=32):
+        super().__init__(dut,name, self._signals)
         self.dut = dut
         self.clk = clk
         self.rst = rst
@@ -65,11 +69,12 @@ class HyperBusMemory:
         self.initial_latency = initial_latency
         self.fixed_latency = fixed_latency
         self.burst_length = burst_length
+        self.ca_bytes = []
 
         # Initialize signals
-        self.dut.csneg.value = 1
-        self.dut.rwds.value = 1
-        self.dut.dq.value = 0
+        self.bus.cs_n.value = 1
+        self.bus.rwds_in.value = 1
+        self.bus.dq_in.value = 0
 
         # Initialize drivers
         self.dq_driver = DQDriver(dut)
@@ -114,18 +119,66 @@ class HyperBusMemory:
 
         # Construct the memory address (simplified example)
         memory_address = (row_column << 5) | lower_column  # Combine row and column parts
-        return memory_address, r_w, as_
+        return memory_address, r_w, addr_space
 
     async def handle_transactions(self):
-        while True:
-            await RisingEdge(self.clk)
-            if self.dut.csneg.value == 0:  # Transaction active
-                address, r_w, as_ = self.decode_address(int(self.dut.dq.value))
-                if r_w:  # Read transaction
-                    data = await self.read(address)
-                    await self.dq_driver.drive(data)  # Drive data back to the bus
-                else:  # Write transaction
-                    await self.write(address, int(self.dut.dq.value))  # Simplified data extraction
+    """
+    Handles a memory transaction by capturing Command/Address (CA) bits.
+
+    - Captures CA bits on both rising and falling edges of CK.
+    - Starts capturing only when `CS#` goes low (indicating a valid transaction).
+    - Captures 6 bytes (48 bits) of CA over 3 clock cycles.
+    - If `CS#` is deasserted (goes high) before all 6 bytes are captured,  
+      the transaction is aborted and the CA buffer is reset.
+    - Once a full CA sequence is captured, it is decoded to determine  
+      if the transaction is a read or write.
+    - If read, the corresponding data is driven onto the bus.  
+      If write, the received data is stored in memory.
+    - The function waits for CS# to go high before allowing a new transaction.
+    """
+
+    	
+	    while True:
+		await FallingEdge(self.bus.cs_n)  # Wait for CS# to go LOW (start of transaction)
+		self.transaction_active = True  # Transaction is active
+		self.ca_bytes = []  # Reset CA buffer
+
+		for _ in range(3):  # 3 clock cycles → 6 CA bytes
+		    await RisingEdge(self.bus.ck)  # Capture on rising edge
+		    if self.bus.cs_n.value == 1:  # If CS# goes high, abort transaction
+		        self.transaction_active = False
+		        self.ca_bytes = []
+		        break
+		    self.capture_ca()
+
+		    await FallingEdge(self.bus.ck)  # Capture on falling edge
+		    if self.bus.cs_n.value == 1:  # If CS# goes high, abort transaction
+		        self.transaction_active = False
+		        self.ca_bytes = []
+		        break
+		    self.capture_ca()
+
+		if len(self.ca_bytes) == 6:  # Ensure full capture before decoding
+		    address, rw, addr_space = self.decode_address()
+		    self.ca_bytes = []  # Reset CA buffer
+
+		    if rw:  # Read transaction
+		        data = await self.read(address)
+		        await self.dq_driver.drive(data)  # Drive data to the bus
+		    else:  # Write transaction
+		        await RisingEdge(self.bus.ck)  # Ensure proper timing
+		        data_in = int(self.bus.dq_in.value)
+		        await self.write(address, data_in)  # Write data
+
+		await RisingEdge(self.bus.cs_n)  # Wait for CS# to go HIGH (transaction end)
+		self.transaction_active = False  # Mark transaction as inactive
+
+    def capture_ca(self):
+	    """
+	    Captures the CA bits from the bus.
+	    """
+	    ca_byte = int(self.bus.dq_in.value)
+	    self.ca_bytes.append(ca_byte)
 
     def log(self, msg):
         print(f'[{get_sim_time("ns")}]  {msg}')
