@@ -187,5 +187,3 @@ module hbc
 	assign o_mem_rdata 	= 	mem_rdata;
 
 endmodule
-
-
